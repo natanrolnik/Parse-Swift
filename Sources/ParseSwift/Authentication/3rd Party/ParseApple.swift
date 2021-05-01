@@ -61,7 +61,6 @@ public struct ParseApple<AuthenticatedUser: ParseUser>: ParseAuthentication {
 public extension ParseApple {
     /**
      Login a `ParseUser` *asynchronously* using Apple authentication.
-     - parameter user: The `user` from `ASAuthorizationAppleIDCredential`.
      - parameter identityToken: The `identityToken` from `ASAuthorizationAppleIDCredential`.
      - parameter options: A set of header options sent to the server. Defaults to an empty set.
      - parameter callbackQueue: The queue to return to after completion. Default value of .main.
@@ -104,8 +103,54 @@ public extension ParseApple {
                                 completion: completion)
     }
 
-    #if canImport(Combine)
+    /**
+     Login a `ParseUser` *asynchronously* using Apple authentication.
+     - parameter user: The `user` from `ASAuthorizationAppleIDCredential`.
+     - parameter identityToken: The `identityToken` from `ASAuthorizationAppleIDCredential`.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - parameter callbackQueue: The queue to return to after completion. Default value of .main.
+     - parameter completion: The block to execute.
+     */
+    func login<U: ParseUser>(_ parseUser: U,
+                             user: String,
+                             identityToken: Data,
+                             options: API.Options = [],
+                             callbackQueue: DispatchQueue = .main,
+                             completion: @escaping (Result<U, ParseError>) -> Void) {
 
+        guard let appleAuthData = try? AuthenticationKeys.id.makeDictionary(user: user, identityToken: identityToken) else {
+            callbackQueue.async {
+                completion(.failure(.init(code: .unknownError,
+                                          message: "Couldn't create authData.")))
+            }
+            return
+        }
+        login(parseUser,
+              authData: appleAuthData,
+              options: options,
+              callbackQueue: callbackQueue,
+              completion: completion)
+    }
+
+    func login<U: ParseUser>(_ parseUser: U,
+                             authData: [String: String],
+                             options: API.Options = [],
+                             callbackQueue: DispatchQueue = .main,
+                             completion: @escaping (Result<U, ParseError>) -> Void) {
+        guard AuthenticationKeys.id.verifyMandatoryKeys(authData: authData) else {
+            callbackQueue.async {
+                completion(.failure(.init(code: .unknownError,
+                                          message: "Should have authData in consisting of keys \"id\" and \"token\".")))
+            }
+            return
+        }
+        parseUser.login(authData: authData,
+                        options: options,
+                        callbackQueue: callbackQueue,
+                        completion: completion)
+    }
+
+    #if canImport(Combine)
     /**
      Login a `ParseUser` *asynchronously* using Apple authentication. Publishes when complete.
      - parameter user: The `user` from `ASAuthorizationAppleIDCredential`.
@@ -130,6 +175,39 @@ public extension ParseApple {
                         options: API.Options = []) -> Future<AuthenticatedUser, ParseError> {
         Future { promise in
             self.login(authData: authData,
+                       options: options,
+                       completion: promise)
+        }
+    }
+
+    /**
+     Login a `ParseUser` *asynchronously* using Apple authentication. Publishes when complete.
+     - parameter user: The `user` from `ASAuthorizationAppleIDCredential`.
+     - parameter identityToken: The `identityToken` from `ASAuthorizationAppleIDCredential`.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - returns: A publisher that eventually produces a single value and then finishes or fails.
+     */
+    @available(macOS 10.15, iOS 13.0, macCatalyst 13.0, watchOS 6.0, tvOS 13.0, *)
+    func loginPublisher<U: ParseUser>(_ parseUser: U,
+                                      user: String,
+                                      identityToken: Data,
+                                      options: API.Options = []) -> Future<U, ParseError> {
+        Future { promise in
+            self.login(parseUser,
+                       user: user,
+                       identityToken: identityToken,
+                       options: options,
+                       completion: promise)
+        }
+    }
+
+    @available(macOS 10.15, iOS 13.0, macCatalyst 13.0, watchOS 6.0, tvOS 13.0, *)
+    func loginPublisher<U: ParseUser>(_ parseUser: U,
+                                      authData: [String: String],
+                                      options: API.Options = []) -> Future<U, ParseError> {
+        Future { promise in
+            self.login(parseUser,
+                       authData: authData,
                        options: options,
                        completion: promise)
         }

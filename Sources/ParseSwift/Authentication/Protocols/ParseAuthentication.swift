@@ -40,6 +40,20 @@ public protocol ParseAuthentication: Codable {
                completion: @escaping (Result<AuthenticatedUser, ParseError>) -> Void)
 
     /**
+     Login a `ParseUser` *asynchronously* using the respective authentication type.
+     - parameter parseUser: The Parse User to login.
+     - parameter authData: The authData for the respective authentication type.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - parameter callbackQueue: The queue to return to after completion. Default value of .main.
+     - parameter completion: The block to execute.
+     */
+    func login<U: ParseUser>(_ parseUser: U,
+                             authData: [String: String],
+                             options: API.Options,
+                             callbackQueue: DispatchQueue,
+                             completion: @escaping (Result<U, ParseError>) -> Void)
+
+    /**
      Link the *current* `ParseUser` *asynchronously* using the respective authentication type.
      - parameter authData: The authData for the respective authentication type.
      - parameter options: A set of header options sent to the server. Defaults to an empty set.
@@ -106,6 +120,19 @@ public protocol ParseAuthentication: Codable {
     @available(macOS 10.15, iOS 13.0, macCatalyst 13.0, watchOS 6.0, tvOS 13.0, *)
     func loginPublisher(authData: [String: String],
                         options: API.Options) -> Future<AuthenticatedUser, ParseError>
+
+    /**
+     Login a `ParseUser` *asynchronously* using the respective authentication type.
+     - parameter parseUser: The Parse User to login.
+     - parameter authData: The authData for the respective authentication type.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - parameter callbackQueue: The queue to return to after completion. Default value of .main.
+     - parameter completion: The block to execute.
+     */
+    @available(macOS 10.15, iOS 13.0, macCatalyst 13.0, watchOS 6.0, tvOS 13.0, *)
+    func loginPublisher<U: ParseUser>(_ parseUser: U,
+                                      authData: [String: String],
+                                      options: API.Options) -> Future<U, ParseError>
 
     /**
      Link the *current* `ParseUser` *asynchronously* using the respective authentication type.
@@ -269,6 +296,46 @@ public extension ParseUser {
         }
     }
 
+    /**
+     Makes an *asynchronous* request to log in a user with specified credentials.
+     Returns an instance of the successfully logged in `ParseUser`.
+
+     This also caches the user locally so that calls to *current* will use the latest logged in user.
+     - parameter authData: The data that represents the authentication.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - parameter callbackQueue: The queue to return to after completion. Default value of .main.
+     - parameter completion: The block to execute.
+     It should have the following argument signature: `(Result<Self, ParseError>)`.
+    */
+    func login(authData: [String: String],
+               options: API.Options,
+               callbackQueue: DispatchQueue = .main,
+               completion: @escaping (Result<Self, ParseError>) -> Void) {
+        if Self.current != nil {
+            self.link(authData: authData,
+                      options: options,
+                      callbackQueue: callbackQueue,
+                      completion: completion)
+        } else {
+            do {
+                try signupCommand()
+                    .executeAsync(options: options,
+                                  callbackQueue: callbackQueue) { result in
+                        completion(result)
+                }
+            } catch {
+                callbackQueue.async {
+                    if let parseError = error as? ParseError {
+                        completion(.failure(parseError))
+                    } else {
+                        let parseError = ParseError(code: .unknownError, message: error.localizedDescription)
+                        completion(.failure(parseError))
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: 3rd Party Authentication - Link
     /**
      Whether the `ParseUser` is logged in with the respective authentication string type.
@@ -362,6 +429,26 @@ public extension ParseUser {
     }
 
     /**
+     Makes a *synchronous* request to link a user with specified credentials. The user should already be logged in.
+
+     Returns an instance of the successfully linked `ParseUser`.
+     This also caches the user locally so that calls to *current* will use the latest logged in user.
+
+     - parameter authData: The data that represents the authentication.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - throws: An error of type `ParseError`.
+     - returns: An instance of the logged in `ParseUser`.
+     If login failed due to either an incorrect password or incorrect username, it throws a `ParseError`.
+    */
+    func link(authData: [String: String],
+              options: API.Options) throws -> Self {
+        guard let current = Self.current else {
+            throw ParseError(code: .unknownError, message: "Must be logged in to link user")
+        }
+        return try current.linkCommand().execute(options: options)
+    }
+
+    /**
      Makes an *asynchronous* request to link a user with specified credentials. The user should already be logged in.
      Returns an instance of the successfully linked `ParseUser`.
 
@@ -387,6 +474,37 @@ public extension ParseUser {
         }
         let body = SignupLoginBody(authData: [type: authData])
         current.linkCommand(body: body)
+            .executeAsync(options: options) { result in
+                callbackQueue.async {
+                    completion(result)
+                }
+            }
+    }
+
+    /**
+     Makes an *asynchronous* request to link a user with specified credentials. The user should already be logged in.
+     Returns an instance of the successfully linked `ParseUser`.
+
+     This also caches the user locally so that calls to *current* will use the latest logged in user.
+     - parameter type: The authentication type.
+     - parameter authData: The data that represents the authentication.
+     - parameter options: A set of header options sent to the server. Defaults to an empty set.
+     - parameter callbackQueue: The queue to return to after completion. Default value of .main.
+     - parameter completion: The block to execute.
+     It should have the following argument signature: `(Result<Self, ParseError>)`.
+    */
+    func link(authData: [String: String],
+              options: API.Options = [],
+              callbackQueue: DispatchQueue = .main,
+              completion: @escaping (Result<Self, ParseError>) -> Void) {
+        guard let current = Self.current else {
+            let error = ParseError(code: .unknownError, message: "Must be logged in to link user")
+            callbackQueue.async {
+                completion(.failure(error))
+            }
+            return
+        }
+        current.linkCommand()
             .executeAsync(options: options) { result in
                 callbackQueue.async {
                     completion(result)
