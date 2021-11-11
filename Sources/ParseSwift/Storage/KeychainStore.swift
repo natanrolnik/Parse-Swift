@@ -142,43 +142,15 @@ struct KeychainStore: SecureStorage {
     }
 
     private func data(forKey key: String) -> Data? {
-        var query: [String: Any] = keychainQuery(forKey: key)
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        query[kSecReturnData as String] = kCFBooleanTrue
-
-        var result: AnyObject?
-        let status = withUnsafeMutablePointer(to: &result) {
-            SecItemCopyMatching(query as CFDictionary, UnsafeMutablePointer($0))
-        }
-
-        guard status == errSecSuccess,
-            let data = result as? Data else {
-            return nil
-        }
-
-        return data
+        nil
     }
 
     private func set(_ data: Data, forKey key: String) throws -> Bool {
-        let query = keychainQuery(forKey: key)
-        let update = [
-            kSecValueData as String: data
-        ]
-
-        let status = synchronizationQueue.sync(flags: .barrier) { () -> OSStatus in
-            if self.data(forKey: key) != nil {
-                return SecItemUpdate(query as CFDictionary, update as CFDictionary)
-            }
-            let mergedQuery = query.merging(update) { (_, otherValue) -> Any in otherValue }
-            return SecItemAdd(mergedQuery as CFDictionary, nil)
-        }
-
-        return status == errSecSuccess
+        true
     }
 
     private func removeObject(forKeyUnsafe key: String) -> Bool {
-        dispatchPrecondition(condition: .onQueue(synchronizationQueue))
-        return SecItemDelete(keychainQuery(forKey: key) as CFDictionary) == errSecSuccess
+        true
     }
 }
 
